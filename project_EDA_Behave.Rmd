@@ -1,0 +1,229 @@
+---
+title: "project_EDA"
+author: "Yu Zhu"
+date: "10/26/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Behavior Data
+## I. Data Description
+### 1.1 Import data
+```{r}
+library(readxl)
+Behave <- read_excel("~/Desktop/ucsc/courses/stat 204/project/ProjectDataset_behave.xlsx")
+```
+
+### 1.2 Summarization
+```{r}
+summary(Behave)
+```
+```{r}
+str(Behave)
+```
+```{r}
+head(Behave)
+```
+
+### 1.3 Check Missing Data
+
+```{r}
+which(is.na(Behave))
+```
+No missing data found. Great!
+
+### 1.4 Factorization
+
+```{r}
+Behave$ParticipantNum = as.factor(Behave$ParticipantNum)
+Behave$Confidence = as.factor(Behave$Confidence)
+Behave$StrengthLevel = as.factor(Behave$StrengthLevel)
+```
+
+```{r}
+# Show the frequency of the variables
+table(Behave$ParticipantNum)
+table(Behave$Confidence)
+table(Behave$StrengthLevel)
+table(Behave$Accuracy)
+```
+
+## II. Explotary Data Analysis
+### 2.1 Contingency table of Acc VS Participant Number
+
+```{r}
+table(Behave$Accuracy, Behave$ParticipantNum)
+```
+### 2.2 Contingency table of Acc VS Confidence
+
+```{r}
+tb_Conf_Acc = table(Behave$Confidence, Behave$Accuracy); tb_Conf_Acc
+plot(tb_Conf_Acc)
+chisq.test(tb_Conf_Acc) ### Perform independence test in detail later
+```
+Obviously, the larger the confidence, the more accurate the experiment.
+
+### 2.3 Contingency table of Acc VS Strength Level
+
+```{r}
+tb_Stren_Acc = table(Behave$StrengthLevel, Behave$Accuracy); tb_Stren_Acc
+plot(tb_Stren_Acc)
+chisq.test(tb_Stren_Acc) ### Perform independence test in detail later
+```
+Obviously, the larger the strength level, the more accurate the experiment.
+
+```{r}
+Behave_1 = data.frame(Behave$Confidence,Behave$StrengthLevel, Behave$Accuracy)
+ftable(table(Behave_1))
+```
+
+### 2.4 Boxplot of Reponse time Vs StrengthLevel and Confidence
+
+```{r}
+par(mfrow = c(1,2))
+boxplot(Behave$ResponseTime~Behave$StrengthLevel)
+boxplot(Behave$ResponseTime~Behave$Confidence)
+```
+
+From the boxplots, there shows the pattern that the response time decrease along with the increasing of strength level and confidence.
+
+
+### 2.5 Accuracy rate 
+#### Barplot
+Here I tried to transfer ACC into accuracy rate, taking means for each participant
+
+```{r}
+agg.ParticipantNum = aggregate(Accuracy~ParticipantNum, data = Behave,  mean)
+agg.ParticipantNum_len = aggregate(Accuracy~ParticipantNum, 
+                        data = Behave,  length)
+agg.ParticipantNum_sd = aggregate(Accuracy~ParticipantNum, 
+                           data = Behave, function(x) sd(x))
+agg.ParticipantNum_se = agg.ParticipantNum_sd$Accuracy/sqrt(agg.ParticipantNum_len$Accuracy)
+agg.ParticipantNum$se = agg.ParticipantNum_se
+```
+
+```{r}
+library(ggplot2)
+gp <- ggplot(agg.ParticipantNum , aes(x=ParticipantNum, y=Accuracy)) +
+  geom_col( size=.05, color = "black",show.legend = FALSE,width = 0.6) + 
+  scale_fill_grey()+
+  geom_errorbar(aes(ymax=Accuracy+se, ymin=Accuracy-se), width=.1,size = 0.2, color = 'black')+
+  theme_classic() + 
+  scale_y_continuous(labels = scales::percent) +
+  xlab("Participants") +
+  ylab("Accuracy Percentage")
+gp+coord_flip()
+```
+The above barplot shows the mean accuracy rate of different participants.
+
+#### Interaction plot
+Here I want to plot interaction plot to show interactions for strength level and confidence.
+
+```{r}
+## FOR DIFFERENT Confidence 
+plot_F_interaction = function(Behave) {
+  gp = list()
+  # pick first 10 participants
+  for (i in 1:10) {
+    dataset.par= Behave[which(Behave$ParticipantNum == unique(Behave$ParticipantNum)[i]),]
+    ### interaction plots
+    agg.stren.conf = aggregate(Accuracy~StrengthLevel + Confidence, 
+                            data = dataset.par,  mean)
+
+    gp[[i]] <- ggplot(agg.stren.conf, aes(x=StrengthLevel, y=Accuracy, colour=Confidence, group=Confidence)) +
+      geom_line(aes(linetype=Confidence), size=.5, color = "black",show.legend = FALSE) + 
+      geom_point(aes(shape=Confidence), size=2, color = 'black',show.legend = FALSE) + 
+     # geom_errorbar(aes(ymax=recovery+se, ymin=recovery-se), width=.1,size = 0.2, color = 'black')+
+      theme_classic() + 
+      scale_y_continuous(labels = scales::percent) +
+      xlab("Strength Level") +
+      ylab("Accuracy Percentage")
+  }
+  library("gridExtra")
+  grid.arrange(gp[[1]], gp[[2]],gp[[3]],gp[[4]],gp[[5]],gp[[6]],gp[[7]],gp[[8]],gp[[9]], gp[[10]], nrow = 5, ncol = 2) 
+}
+```
+
+```{r}
+plot_F_interaction(Behave)
+```
+
+There seems to have mild interactions between strength level and confidence. So when we fit model, we could consider to add interaction terms.
+
+
+## III. Models
+### 3.1 GLM Model
+Fist we want to fit logistic regression model here with response variable Acc.
+```{r}
+fit1 = glm(Accuracy~., data = Behave, family = binomial) # additive model
+summary(fit1)
+```
+
+We can consider to use AIC criterion to fit the best model.
+```{r}
+summary(step(fit1))
+```
+
+So this additive model has the best AIC. 
+
+Response time is significant here, but we can still exclude response time adn fit ANOVA to see what will happen.
+
+```{r}
+fit2 = glm(Accuracy~ParticipantNum + Confidence + StrengthLevel, data = Behave, family = binomial) # additive model
+summary(fit2)
+``` 
+
+ANOVA:
+```{r}
+anova(fit2, test = 'Chi')
+```
+
+All are significant.
+
+Check goodness of fit:
+```{r}
+res.P = residuals(fit1, type="pearson")
+res.D = residuals(fit1, type="deviance") #or residuals(fit), by default
+boxplot(cbind(res.P, res.D), labels = c("Pearson", "Deviance"))
+```
+
+```{r}
+par(mfrow=c(1,2))
+plot(fit1$fitted.values, res.P, pch=16, cex=0.6, ylab='Pearson Residuals', xlab='Fitted Values')
+lines(smooth.spline(fit1$fitted.values, res.P, spar=0.9), col=2)
+abline(h=0, lty=2, col='grey')
+plot(fit1$fitted.values, res.D, pch=16, cex=0.6, ylab='Deviance Residuals', xlab='Fitted Values')
+lines(smooth.spline(fit1$fitted.values, res.D, spar=0.9), col=2)
+abline(h=0, lty=2, col='grey')
+```
+
+Run tests:
+```{r}
+library(lawstat)
+runs.test(y = res.P, plot.it = TRUE)
+title(main='Pearson Residual Runs Test')
+runs.test(y = res.D, plot.it = TRUE)
+title(main='Deviance Residual Runs Test')
+```
+
+Sheffe's Pariwise Comparisions:
+```{r}
+
+library(multcomp)
+library(agricolae)
+par(mfrow = c(1,1))
+sheffetest.1 = scheffe.test(fit1,'Confidence')
+print(sheffetest.1)
+plot(sheffetest.1)
+
+sheffetest.2 = scheffe.test(fit1,'StrengthLevel')
+print(sheffetest.2)
+plot(sheffetest.2)
+
+```
+
+
+
