@@ -28,12 +28,51 @@ str(Behave)
 head(Behave)
 ```
 
+```{r}
+table(Behave$ParticipantNum)
+table(Behave$Confidence)
+```
 ### 1.3 Check Missing Data
 
 ```{r}
 which(is.na(Behave))
 ```
 No missing data found. Great!
+
+```{r}
+
+library(naniar)
+vis_miss(Behave)
+```
+
+```{r}
+library(ggplot2)
+p <- ggplot(Behave, aes(x=ResponseTime)) + 
+  geom_histogram(binwidth=0.1, alpha=0.9, fill="#69b3a2", color="#e9ecef") +
+  ggtitle("Histogram of Response Time")
+p
+```
+
+
+```{r}
+library(dplyr)
+library(hrbrthemes)
+
+Accurate_RT = Behave$ResponseTime[Behave$Accuracy == 1]
+Inaccurate_RT = Behave$ResponseTime[Behave$Accuracy == 0]
+acc_data <- data.frame(
+  type = c( rep("Response Time under Accurate Decision", length(Accurate_RT)), rep("Response Time under Inaccurate Decision", length(Inaccurate_RT)) ),
+  value = c( Accurate_RT, Inaccurate_RT )
+)
+
+# Represent it
+p <- acc_data %>%
+  ggplot( aes(x=value, fill=type)) +
+    geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity') +
+    scale_fill_manual(values=c("#69b3a2", "#404080")) +
+    labs(fill="")
+p
+```
 
 ### 1.4 Factorization
 
@@ -52,46 +91,52 @@ table(Behave$Accuracy)
 ```
 
 ## II. Explotary Data Analysis
-### 2.1 Contingency table of Acc VS Participant Number
+### 2.1 Contingency tables
 
 ```{r}
-table(Behave$Accuracy, Behave$ParticipantNum)
+# Strength level VS Participant Number
+table(Behave$StrengthLevel, Behave$ParticipantNum)
 ```
-### 2.2 Contingency table of Acc VS Confidence
 
 ```{r}
-tb_Conf_Acc = table(Behave$Confidence, Behave$Accuracy); tb_Conf_Acc
-plot(tb_Conf_Acc)
-chisq.test(tb_Conf_Acc) ### Perform independence test in detail later
+# Strength Level vs Confidence
+library(vcd)
+tb_Str_Conf = table(Behave$StrengthLevel, Behave$Confidence); tb_Str_Conf
+mosaicplot(tb_Str_Conf, main="Confidence vs Strength Level", xlab="Strength", ylab="Confidence",shade=TRUE)
+chisq.test(tb_Str_Conf) ### Perform independence test in detail later
 ```
 Obviously, the larger the confidence, the more accurate the experiment.
 
-### 2.3 Contingency table of Acc VS Strength Level
 
 ```{r}
+# Acc VS Strength Level
 tb_Stren_Acc = table(Behave$StrengthLevel, Behave$Accuracy); tb_Stren_Acc
-plot(tb_Stren_Acc)
+mosaicplot(tb_Stren_Acc, shade = TRUE, main="Accuracy vs Strength Level", xlab="Strength Level", ylab="Accuracy")
 chisq.test(tb_Stren_Acc) ### Perform independence test in detail later
 ```
 Obviously, the larger the strength level, the more accurate the experiment.
+
+
 
 ```{r}
 Behave_1 = data.frame(Behave$Confidence,Behave$StrengthLevel, Behave$Accuracy)
 ftable(table(Behave_1))
 ```
 
-### 2.4 Boxplot of Reponse time Vs StrengthLevel and Confidence
+### 2.2 Boxplot of Reponse time Vs Accuracy and Reponse time Vs Confidence
 
 ```{r}
 par(mfrow = c(1,2))
-boxplot(Behave$ResponseTime~Behave$StrengthLevel)
-boxplot(Behave$ResponseTime~Behave$Confidence)
+boxplot(Behave$ResponseTime~Behave$Accuracy, xlab = "Accuracy", ylab = "Response Time", col=rgb(0.3,0.5,0.4,0.6))
+boxplot(Behave$ResponseTime~Behave$Confidence, xlab = "Confidence", ylab = "Response Time", col="#69b3a2")
+
+#boxplot(Behave$ResponseTime~Behave$StrengthLevel, xlab = "Strength Level", ylab = "Response Time")
 ```
 
 From the boxplots, there shows the pattern that the response time decrease along with the increasing of strength level and confidence.
 
 
-### 2.5 Accuracy rate 
+### 2.3 Accuracy rate 
 #### Barplot
 Here I tried to transfer ACC into accuracy rate, taking means for each participant
 
@@ -130,17 +175,20 @@ plot_F_interaction = function(Behave) {
   for (i in 1:10) {
     dataset.par= Behave[which(Behave$ParticipantNum == unique(Behave$ParticipantNum)[i]),]
     ### interaction plots
-    agg.stren.conf = aggregate(Accuracy~StrengthLevel + Confidence, 
+    agg.stren.conf = aggregate(Accuracy~ResponseTime + StrengthLevel, 
                             data = dataset.par,  mean)
 
-    gp[[i]] <- ggplot(agg.stren.conf, aes(x=StrengthLevel, y=Accuracy, colour=Confidence, group=Confidence)) +
-      geom_line(aes(linetype=Confidence), size=.5, color = "black",show.legend = FALSE) + 
-      geom_point(aes(shape=Confidence), size=2, color = 'black',show.legend = FALSE) + 
-     # geom_errorbar(aes(ymax=recovery+se, ymin=recovery-se), width=.1,size = 0.2, color = 'black')+
-      theme_classic() + 
-      scale_y_continuous(labels = scales::percent) +
-      xlab("Strength Level") +
-      ylab("Accuracy Percentage")
+#    gp[[i]] <- ggplot(agg.stren.conf, aes(x=ResponseTime, y=Accuracy, colour=StrengthLevel, #group=StrengthLevel)) +
+#      geom_line(aes(linetype=StrengthLevel), size=.5, color = "black",show.legend = FALSE) + 
+#      geom_point(aes(shape=StrengthLevel), size=2, color = 'black',show.legend = FALSE) + 
+#     # geom_errorbar(aes(ymax=recovery+se, ymin=recovery-se), width=.1,size = 0.2, color = 'black')+
+#      theme_classic() + 
+#      scale_y_continuous(labels = scales::percent) +
+#      xlab("ResponseTime") +
+#      ylab("Accuracy Percentage")
+    
+    gp[[i]] <- qplot(x = ResponseTime, y = Accuracy, data = agg.stren.conf, color = StrengthLevel) +
+  geom_smooth(method = "lm") 
   }
   library("gridExtra")
   grid.arrange(gp[[1]], gp[[2]],gp[[3]],gp[[4]],gp[[5]],gp[[6]],gp[[7]],gp[[8]],gp[[9]], gp[[10]], nrow = 5, ncol = 2) 
@@ -148,7 +196,66 @@ plot_F_interaction = function(Behave) {
 ```
 
 ```{r}
+## FOR DIFFERENT Confidence 
+plot_F_interaction = function(Behave) {
+
+  # pick first 10 participants
+    ### interaction plots
+    agg.stren.conf = aggregate(cbind(Accuracy, ResponseTime,StrengthLevel)~ ParticipantNum ,
+                            data = Behave,  mean)
+    print(agg.stren.conf)
+#    gp[[i]] <- ggplot(agg.stren.conf, aes(x=ResponseTime, y=Accuracy, colour=StrengthLevel, #group=StrengthLevel)) +
+#      geom_line(aes(linetype=StrengthLevel), size=.5, color = "black",show.legend = FALSE) + 
+#      geom_point(aes(shape=StrengthLevel), size=2, color = 'black',show.legend = FALSE) + 
+#     # geom_errorbar(aes(ymax=recovery+se, ymin=recovery-se), width=.1,size = 0.2, color = 'black')+
+#      theme_classic() + 
+#      scale_y_continuous(labels = scales::percent) +
+#      xlab("ResponseTime") +
+#      ylab("Accuracy Percentage")
+    
+    gp <- qplot(x = ResponseTime, y = Accuracy, data = agg.stren.conf, color = StrengthLevel) +
+  geom_smooth(method = "lm") 
+
+    gp
+}
+```
+
+
+```{r}
 plot_F_interaction(Behave)
+```
+
+```{r}
+library(tidyverse)
+glm1 <- glm(Accuracy~StrengthLevel*ResponseTime, data = Behave,
+            family = "binomial")
+newdf = cbind(Behave, Pred_Logit_Accuracy = predict(glm1))
+
+ggplot(newdf) +
+  aes(x = ResponseTime, y = Pred_Logit_Accuracy, color = StrengthLevel) +
+  geom_point() +
+  geom_line() + 
+  scale_color_manual(
+        values=c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"))
+```
+```{r}
+newdf1 = cbind(newdf, Pred_Prob_Accuracy = predict(glm1, type = "response"))
+  ggplot(newdf1) +
+  aes(x = ResponseTime, y = Pred_Prob_Accuracy, color = StrengthLevel) +
+  geom_point() +
+  geom_smooth(method = "glm",
+              aes(x = ResponseTime, y= Pred_Prob_Accuracy),
+              method.args = list(family = "binomial"),
+              se = TRUE)+
+    scale_color_manual(
+        values=c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"))
+```
+
+```{r}
+boxplot(ResponseTime~ParticipantNum, data = Behave, xlab="ParticipantNum", ylab="ResponseTime")
+boxplot(Accuracy~ParticipantNum, data = Behave, xlab="ParticipantNum", ylab="Accuracy")
+
+agg.ParticipantNum
 ```
 
 There seems to have mild interactions between strength level and confidence. So when we fit model, we could consider to add interaction terms.
@@ -158,7 +265,9 @@ There seems to have mild interactions between strength level and confidence. So 
 ### 3.1 GLM Model
 Fist we want to fit logistic regression model here with response variable Acc.
 ```{r}
-fit1 = glm(Accuracy~., data = Behave, family = binomial) # additive model
+install.packages("lme4")
+library(lme4)
+fit1 = glmer(Accuracy~StrengthLevel+(1|ParticipantNum), data = Behave, family = binomial) # additive model
 summary(fit1)
 ```
 
@@ -169,7 +278,16 @@ summary(step(fit1))
 
 So this additive model has the best AIC. 
 
-Response time is significant here, but we can still exclude response time adn fit ANOVA to see what will happen.
+```{r}
+plot(fit1$fitted.values, fit1$residuals)
+points(loess.smooth(fit1$fitted.values, fit1$residuals), type = "l", lty = 2, col = "red")
+
+```
+```{r}
+```
+
+
+Response time is significant here, but we can still exclude response time and fit ANOVA to see what will happen.
 
 ```{r}
 fit2 = glm(Accuracy~ParticipantNum + Confidence + StrengthLevel, data = Behave, family = binomial) # additive model
