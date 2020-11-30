@@ -1,5 +1,5 @@
 ---
-title: "204 Project Modeling ANOVA and Logistic Regression"
+title: "204 Project Modeling ANOVA"
 author: "Jacobo Pereira-Pacheco"
 date: "11/28/2020"
 output: pdf_document
