@@ -1,0 +1,122 @@
+---
+title: "Behave_Project_Modeling"
+author: "Yu Zhu"
+date: "12/1/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readxl)
+Behave <- read_excel("~/Desktop/ucsc/courses/stat 204/project/ProjectDataset_behave.xlsx")
+```
+
+
+```{r}
+Behave$ParticipantNum = as.factor(Behave$ParticipantNum)
+Behave$Confidence = as.factor(Behave$Confidence)
+Behave$StrengthLevel = as.factor(Behave$StrengthLevel)
+```
+
+## Models
+### 1. Randomized Block Model
+```{r}
+L_aov = aov(ResponseTime~StrengthLevel*ParticipantNum, data = Behave)
+summary(L_aov)
+```
+
+#### Diagnostics
+```{r}
+par(mfrow=c(2,2))
+plot(L_aov)
+```
+
+
+#### Tukey's HSD
+```{r}
+CIs_strLevel = TukeyHSD(L_aov, which = 1)
+CIs_strLevel
+```
+
+```{r}
+plot(CIs_strLevel)
+```
+
+#### Scheffe's method
+```{r}
+library(DescTools)
+ScheffeTest(x=L_aov, which="StrengthLevel")
+```
+
+### 2. Logistic Regression Model
+```{r}
+library(lme4)
+logistic_fit1 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = Behave, family = binomial) 
+summary(logistic_fit1)
+```
+
+```{r}
+logistic_fit2 = glmer(Accuracy~StrengthLevel+(1|ParticipantNum), data = Behave, family = binomial) 
+summary(logistic_fit2)
+```
+
+```{r}
+logistic_fit3 = glmer(Accuracy~ResponseTime+(1|ParticipantNum), data = Behave, family = binomial) 
+summary(logistic_fit3)
+```
+
+#### output the table
+```{r}
+library(stargazer)
+stargazer(logistic_fit1, logistic_fit2, logistic_fit3, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
+```
+
+
+#### Likelihood Ratio Tests (Goodness-of-fit)
+```{r}
+library(lmtest)
+lrtest(logistic_fit2, logistic_fit1)
+lrtest(logistic_fit3, logistic_fit1)
+```
+#### train test split
+```{r}
+library(dplyr)
+set.seed(1234)
+train = Behave %>% group_by(ParticipantNum, StrengthLevel) %>% sample_n(80)
+test = dplyr::anti_join(Behave, train)
+```
+
+#### test error
+```{r}
+library(ROCR)
+logistic_fit4 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
+# Compute AUC for predicting Class with the model
+prob <- predict(logistic_fit4, newdata=test, type="response")
+pred <- prediction(prob, test$Accuracy)
+Behave_fit_pred = rep(0, dim(test)[1])
+Behave_fit_pred[prob > 0.5] = 1
+
+test_error = mean(Behave_fit_pred != test$Accuracy)
+test_error
+```
+
+#### Confusion Matrix
+```{r}
+table(Behave_fit_pred, test$Accuracy)
+```
+
+####  ROC curve and AUROC
+```{r}
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf)
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+
+

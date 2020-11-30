@@ -262,29 +262,109 @@ There seems to have mild interactions between strength level and confidence. So 
 
 
 ## III. Models
-### 3.1 GLM Model
+### 3.1 Randomized Block Model
+```{r}
+L_aov = aov(ResponseTime~StrengthLevel*ParticipantNum, data = Behave)
+summary(L_aov)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(L_aov)
+```
+
+```{r}
+CIs_strLevel = TukeyHSD(L_aov, which = 1)
+CIs_strLevel
+```
+
+```{r}
+plot(CIs_strLevel)
+```
+
+```{r}
+install.packages("DescTools")
+library(DescTools)
+ScheffeTest(x=L_aov, which="StrengthLevel")
+```
+
+### 3.2 GLM Model
 Fist we want to fit logistic regression model here with response variable Acc.
 ```{r}
-install.packages("lme4")
 library(lme4)
-fit1 = glmer(Accuracy~StrengthLevel+(1|ParticipantNum), data = Behave, family = binomial) # additive model
-summary(fit1)
+logistic_fit1 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = Behave, family = binomial) 
+summary(logistic_fit1)
 ```
 
-We can consider to use AIC criterion to fit the best model.
 ```{r}
-summary(step(fit1))
+logistic_fit2 = glmer(Accuracy~StrengthLevel+(1|ParticipantNum), data = Behave, family = binomial) 
+summary(logistic_fit2)
 ```
 
-So this additive model has the best AIC. 
+```{r}
+logistic_fit3 = glmer(Accuracy~ResponseTime+(1|ParticipantNum), data = Behave, family = binomial) 
+summary(logistic_fit3)
+```
+
+
+```{r}
+library(stargazer)
+stargazer(logistic_fit1, logistic_fit2, logistic_fit3, title='Summary Statistics of Model 1',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
+```
+
+```{r}
+library(lmtest)
+lrtest(logistic_fit2, logistic_fit1)
+lrtest(logistic_fit3, logistic_fit1)
+```
+
+```{r}
+library(dplyr)
+set.seed(1234)
+train = Behave %>% group_by(ParticipantNum, StrengthLevel) %>% sample_n(80)
+test = dplyr::anti_join(Behave, train)
+train = (rbinom(dim(Behave)[1], 1, 0.8) == 1)
+Behave_train = Behave[train, ]
+Behave_test = Behave[!train, ]
+```
+
+```{r}
+install.packages("ROCR")
+library(ROCR)
+logistic_fit4 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
+# Compute AUC for predicting Class with the model
+prob <- predict(logistic_fit4, newdata=test, type="response")
+pred <- prediction(prob, test$Accuracy)
+Behave_fit_pred = rep(0, dim(test)[1])
+Behave_fit_pred[prob > 0.5] = 1
+test_error = mean(Behave_fit_pred != test$Accuracy)
+table(Behave_fit_pred, test$Accuracy)
+test_error
+```
+
+```{r}
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf)
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+
+```{r}
+install.packages("caret")
+library(caret)
+
+confusionMatrix(data=pred, Behave_test$Accuracy)
+```
+
 
 ```{r}
 plot(fit1$fitted.values, fit1$residuals)
 points(loess.smooth(fit1$fitted.values, fit1$residuals), type = "l", lty = 2, col = "red")
 
 ```
-```{r}
-```
+
 
 
 Response time is significant here, but we can still exclude response time and fit ANOVA to see what will happen.
