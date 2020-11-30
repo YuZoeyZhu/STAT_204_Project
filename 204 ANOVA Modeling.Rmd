@@ -1,0 +1,93 @@
+---
+title: "204 Project Modeling ANOVA and Logistic Regression"
+author: "Jacobo Pereira-Pacheco"
+date: "11/28/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(gplots)
+library(emmeans)
+```
+
+
+```{r reading in data}
+behave = read.csv('/Users/jacobopereira-pacheco/Desktop/UCSC/204/204 project/data/204_behave_data.csv')
+
+behave$Confidence = as.factor(behave$Confidence)
+behave$StrengthLevel = as.factor(behave$StrengthLevel)
+behave$ParticipantNum = as.factor(behave$ParticipantNum)
+```
+# ANOVA with Interaction 
+
+* If we fit the initial ANOVA model with an interaction effect between 'StrengthLevel' and 'ParticipantNum' we retrieve a model that reveals a significant interaction between the two via the F-test. However, this model may be a bit tough to interpret besides the F-test value. Since 'ParticipantNum' is a lengthy list of participants, the plausible interactions are expansive. 
+
+```{r ANOVA}
+L.int = aov(ResponseTime ~ StrengthLevel*ParticipantNum, data = behave)
+summary(L.int) # interactions are significant here 
+par(mfrow = c(2,2))
+
+plot(L.int)
+```
+
+
+* Version below is to further improve the outlook of the residual plots with a logarithm transformation
+
+```{r log anova}
+L.int.log = aov(log(ResponseTime) ~ StrengthLevel*ParticipantNum, data = behave)
+summary(L.int.log) # interactions are significant here 
+par(mfrow = c(2,2))
+
+plot(L.int.log)
+```
+
+* The difficult part of the interaction model is that we are considering an interaction of participants and evidence strength. In this case the pairwise comparisons for each factor levels need to be held constant due to the interactions present. A possible avenue of modeling the interaction is provided below.
+* What is noticeable is the variety of contrasts plausible which are a lot. Need to see if this information is even useful? Or simply knowing that there is an interaction term is sufficient. 
+```{r}
+emm_s_p <- emmeans(L.int, pairwise ~ StrengthLevel | ParticipantNum)
+emm_s_p$contrasts
+```
+
+
+# ANOVA without interaction 
+
+* What may be more appropriate and easier in terms of interpretation is an ANOVA with a block factor. In this case 'ParticipantNum' is the block variable and 'StrengthLevel' is the treatment. 
+
+```{r}
+L = aov(ResponseTime ~ StrengthLevel + ParticipantNum, data = behave)
+
+summary(L) # statistically significant results from StrengthLevel and ParticipantNum 
+
+par(mfrow = c(2,2))
+plot(L)
+```
+
+
+* Logarithm response is still better for the normality residual assumption in these models. 
+```{r}
+L.log = aov(log(ResponseTime) ~ StrengthLevel + ParticipantNum, data = behave)
+summary(L.log)
+
+par(mfrow = c(2,2))
+plot(L.log)
+
+```
+
+* Without the interaction term we can look specifically at the statistically significant treatment levels while treating 'ParticipantNum' as a block factor. 
+* Maybe the interaction effect of 'StrengthLevel' and 'ParticipantNum' is best for the predictive models...
+* 
+```{r}
+par(mfrow = c(1,1))
+
+plot(TukeyHSD(L.log, which = c('StrengthLevel')))
+
+```
+
+* Purely graphical representation of the variables 
+```{r warning=F}
+plotmeans(behave$ResponseTime~behave$StrengthLevel)
+plotmeans(behave$ResponseTime~behave$ParticipantNum)
+
+```
