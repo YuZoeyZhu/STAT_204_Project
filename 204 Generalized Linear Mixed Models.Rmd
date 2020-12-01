@@ -1,0 +1,124 @@
+---
+title: "Generalized Linear Mixed Models"
+author: "Jacobo Pereira-Pacheco"
+date: "11/30/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(lme4)
+library(dplyr)
+library(gplots)
+library(emmeans)
+```
+# Logistic Regression Mixed Model 
+
+* This work is focusing on fitting models, and calculating their respective test errors and confusion matrices. More work needs to be done on model assumptions and model fit. 
+```{r}
+behave = read.csv('/Users/jacobopereira-pacheco/Desktop/UCSC/204/204 project/data/204_behave_data.csv')
+
+
+behave$Confidence = as.factor(behave$Confidence)
+behave$StrengthLevel = as.factor(behave$StrengthLevel)
+behave$ParticipantNum = as.factor(behave$ParticipantNum)
+```
+## Interaction Check 
+
+* Interaction: The model results point to significant interactions but how does this interpret in context of the results and is this appropriate? Focus is on the portion without interaction 
+```{r}
+mm.int = glmer(Accuracy ~ StrengthLevel * ResponseTime + (1|ParticipantNum) , data = behave, family = 'binomial')
+summary(mm.int)
+anova(mm.int)
+```
+
+## Mixed Model without Interaction 
+```{r}
+mm = glmer(Accuracy ~ StrengthLevel + ResponseTime + (1|ParticipantNum) , data = behave, family = 'binomial')
+summary(mm)
+```
+
+## Testing Model 
+* Train/Test set were developed
+* Confusion Matrix was created 
+* Fraction of correct predictions
+* Test Error 
+```{r}
+
+train = sample(1:nrow(behave), 0.75*dim(behave)[1])
+test.behave  = behave[-train,]
+accuracy.test = test.behave$Accuracy
+
+
+mm.train = glmer(Accuracy ~ StrengthLevel + ResponseTime + (1|ParticipantNum), data = behave, family = 'binomial', subset = train)
+
+summary(mm.train)
+
+dim(test.behave)
+
+
+glm.probs = predict(mm.train, test.behave, type = 'response')
+
+
+glm.pred.behave = rep(0,5112)
+glm.pred.behave[glm.probs > 0.5] = 1
+
+
+table(glm.pred.behave, accuracy.test) # confusion matrix 
+
+mean(glm.pred.behave == accuracy.test) # fraction of correct predictions 
+mean(glm.pred.behave != accuracy.test) # test error 
+
+```
+
+
+# Multinomial Model --> Binary Response (GLMM)
+## Model Description and construction
+* Need to confirm the thoery makes sense as opposed to fitting separate logistic regressions for levels or just a general multinomial model (suppose mixed)
+* In this portion the 'multinomial' model is being fit but instead of having confidence as a 4 level response, it seems easier to explore the 4 levels split into a binary response
+* In this case, confidence 1,2 --> 0, confidence 3,4 --> 1. Hence, 0 signifies low confidence, and 1 signifies high confidence. 
+* New dataset is created to be ~safe~ and model is fit as before 
+```{r}
+
+behave.m <- behave %>%
+  mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
+```
+## Confidence Mixed Model without Interaction 
+```{r}
+mm.conf = glmer(Conf ~ StrengthLevel + ResponseTime + (1|ParticipantNum) , data = behave.m, family = 'binomial')
+summary(mm.conf)
+```
+## Testing Model 
+* Train/Test set were developed
+* Confusion Matrix was created 
+* Fraction of correct predictions
+* Test Error 
+```{r}
+
+train.m = sample(1:nrow(behave.m), 0.75*dim(behave.m)[1])
+test.behave.m  = behave.m[-train.m,]
+confidence.test = test.behave.m$Conf
+
+
+
+
+mm.conf.train = glmer(Conf ~ StrengthLevel + ResponseTime + (1|ParticipantNum), data = behave.m, family = 'binomial', subset = train.m)
+
+summary(mm.conf.train)
+
+dim(test.behave.m)
+
+
+glm.probs.conf = predict(mm.conf.train, test.behave.m, type = 'response')
+
+
+glm.pred.conf = rep(0,5112)
+glm.pred.conf[glm.probs.conf > 0.5] = 1
+
+
+table(glm.pred.conf, confidence.test) # confusion matrix 
+
+mean(glm.pred.conf == confidence.test) # fraction of correct predictions 
+mean(glm.pred.conf != confidence.test) # test error 
+
+```
