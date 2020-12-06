@@ -25,7 +25,7 @@ Behave$StrengthLevel = as.factor(Behave$StrengthLevel)
 ## Models
 ### 1. Randomized Block Model
 ```{r}
-L_aov = aov(ResponseTime~StrengthLevel*ParticipantNum, data = Behave)
+L_aov = aov(ResponseTime~StrengthLevel+ParticipantNum, data = Behave)
 summary(L_aov)
 ```
 
@@ -52,36 +52,39 @@ library(DescTools)
 ScheffeTest(x=L_aov, which="StrengthLevel")
 ```
 
+
+
 ### 2. Logistic Regression Model
 ```{r}
 library(lme4)
-logistic_fit1 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = Behave, family = binomial) 
-summary(logistic_fit1)
+acc_fit0 = glmer(Accuracy~StrengthLevel*ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
+summary(acc_fit0)
 ```
 
 ```{r}
-logistic_fit2 = glmer(Accuracy~StrengthLevel+(1|ParticipantNum), data = Behave, family = binomial) 
-summary(logistic_fit2)
+library(ResourceSelection)
+hoslem.test(Behave$Accuracy, fitted(acc_fit0), g=10)
 ```
 
 ```{r}
-logistic_fit3 = glmer(Accuracy~ResponseTime+(1|ParticipantNum), data = Behave, family = binomial) 
-summary(logistic_fit3)
+library(lme4)
+acc_fit1 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
+summary(acc_fit1)
 ```
 
 #### output the table
 ```{r}
 library(stargazer)
-stargazer(logistic_fit1, logistic_fit2, logistic_fit3, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
+stargazer(acc_fit0, acc_fit1, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
 ```
 
 
 #### Likelihood Ratio Tests (Goodness-of-fit)
 ```{r}
 library(lmtest)
-lrtest(logistic_fit2, logistic_fit1)
-lrtest(logistic_fit3, logistic_fit1)
+lrtest(acc_fit0, acc_fit1)
 ```
+
 #### train test split
 ```{r}
 library(dplyr)
@@ -90,12 +93,27 @@ train = Behave %>% group_by(ParticipantNum, StrengthLevel) %>% sample_n(80)
 test = dplyr::anti_join(Behave, train)
 ```
 
+
+#### test if train test sets have similar distribution (feature-by-feature)
+(1)  Kolomogorov-Smirnov tests (for continuous response time)
+ evaluate their similarity by measuring the differences between the ECDFs
+```{r}
+ks.test(train$ResponseTime, test$ResponseTime)
+```
+(2)  Chi-square test (for categorical strength level)
+```{r}
+chisq.test(train$StrengthLevel, test$StrengthLevel)
+```
+
+
+
+
 #### test error
 ```{r}
 library(ROCR)
 logistic_fit4 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
 # Compute AUC for predicting Class with the model
-prob <- predict(logistic_fit4, newdata=test, type="response")
+prob <- predict(acc_fit4, newdata=test, type="response")
 pred <- prediction(prob, test$Accuracy)
 Behave_fit_pred = rep(0, dim(test)[1])
 Behave_fit_pred[prob > 0.5] = 1
@@ -117,6 +135,43 @@ auc <- performance(pred, measure = "auc")
 auc <- auc@y.values[[1]]
 auc
 ```
+
+### 3. Confidence Logistic Regression Model
+
+```{r}
+library(dplyr)
+behave <- Behave %>%
+  mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
+```
+
+```{r}
+library(lme4)
+conf_fit0 = glmer(Conf~StrengthLevel*ResponseTime+(1|ParticipantNum), data = behave, family = binomial) 
+summary(conf_fit0)
+```
+
+```{r}
+library(lme4)
+conf_fit1 = glmer(Conf~StrengthLevel+ResponseTime+(1|ParticipantNum), data = behave, family = binomial) 
+summary(conf_fit1)
+```
+
+
+```{r}
+library(lme4)
+conf_fit1 = glmer(Conf~StrengthLevel+ResponseTime+(1|ParticipantNum), data = behave, family = binomial) 
+summary(conf_fit1)
+```
+
+
+#### Likelihood Ratio Tests (Goodness-of-fit)
+```{r}
+library(lmtest)
+lrtest(conf_fit0, conf_fit1)
+```
+
+
+
 
 
 
