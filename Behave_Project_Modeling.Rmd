@@ -13,7 +13,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(readxl)
 Behave <- read_excel("~/Desktop/ucsc/courses/stat 204/project/ProjectDataset_behave.xlsx")
+train = read.csv("~/Desktop/ucsc/courses/stat 204/project/STAT_204_Project/data/Accuracy_Training.csv")
+test = read.csv("~/Desktop/ucsc/courses/stat 204/project/STAT_204_Project/data/Accuracy_Testing.csv")
 ```
+
+```{r}
+plot(as.factor(Behave$Accuracy))
+```
+
 
 
 ```{r}
@@ -21,6 +28,21 @@ Behave$ParticipantNum = as.factor(Behave$ParticipantNum)
 Behave$Confidence = as.factor(Behave$Confidence)
 Behave$StrengthLevel = as.factor(Behave$StrengthLevel)
 ```
+
+```{r}
+train$ParticipantNum = as.factor(train$ParticipantNum)
+train$Confidence = as.factor(train$Confidence)
+train$StrengthLevel = as.factor(train$StrengthLevel)
+```
+
+```{r}
+test$ParticipantNum = as.factor(test$ParticipantNum)
+test$Confidence = as.factor(test$Confidence)
+test$StrengthLevel = as.factor(test$StrengthLevel)
+```
+
+
+
 
 ## Models
 ### 1. Randomized Block Model
@@ -55,6 +77,39 @@ ScheffeTest(x=L_aov, which="StrengthLevel")
 
 
 ### 2. Logistic Regression Model
+
+#### train test split
+```{r}
+library(dplyr)
+set.seed(1234)
+train = Behave %>% group_by(ParticipantNum, StrengthLevel) %>% sample_n(80)
+#write.csv(train,"~/Desktop/ucsc/courses/stat 204/project/Accuracy_Training.csv", row.names = FALSE)
+dim(train)[1]/dim(Behave[1])
+test = dplyr::anti_join(Behave, train)
+#write.csv(test,"~/Desktop/ucsc/courses/stat 204/project/Accuracy_Testing.csv", row.names = FALSE)
+```
+
+
+#### test if train test sets have similar distribution (feature-by-feature)
+Show some plots
+```{r}
+boxplot(train$ResponseTime, test$ResponseTime)
+box_train_rt = data.frame(ResponseTime = train$ResponseTime, set = rep("train", length(train$ResponseTime)))
+box_test_rt = data.frame(ResponseTime = test$ResponseTime, set = rep("test", length(test$ResponseTime)))
+box_rt = rbind(box_train_rt,box_test_rt)
+boxplot(box_rt$ResponseTime~box_rt$set, xlab = "Subset", ylab = "Response Time", col=rgb(0.3,0.5,0.4,0.6))
+boxplot(box_rt$ResponseTime~box_rt$set, xlab = "Subset", ylab = "Response Time")
+```
+
+
+(1)  Kolomogorov-Smirnov tests (for continuous response time)
+ evaluate their similarity by measuring the differences between the ECDFs
+```{r}
+ks.test(train$ResponseTime, test$ResponseTime)
+```
+
+
+#### fit the full model with interation term
 ```{r}
 library(lme4)
 acc_fit0 = glmer(Accuracy~StrengthLevel*ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
@@ -66,6 +121,8 @@ library(ResourceSelection)
 hoslem.test(Behave$Accuracy, fitted(acc_fit0), g=10)
 ```
 
+
+#### fit the additive model
 ```{r}
 library(lme4)
 acc_fit1 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
@@ -85,35 +142,11 @@ library(lmtest)
 lrtest(acc_fit0, acc_fit1)
 ```
 
-#### train test split
-```{r}
-library(dplyr)
-set.seed(1234)
-train = Behave %>% group_by(ParticipantNum, StrengthLevel) %>% sample_n(80)
-test = dplyr::anti_join(Behave, train)
-```
-
-
-#### test if train test sets have similar distribution (feature-by-feature)
-(1)  Kolomogorov-Smirnov tests (for continuous response time)
- evaluate their similarity by measuring the differences between the ECDFs
-```{r}
-ks.test(train$ResponseTime, test$ResponseTime)
-```
-(2)  Chi-square test (for categorical strength level)
-```{r}
-chisq.test(train$StrengthLevel, test$StrengthLevel)
-```
-
-
-
-
 #### test error
 ```{r}
 library(ROCR)
-logistic_fit4 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
 # Compute AUC for predicting Class with the model
-prob <- predict(acc_fit4, newdata=test, type="response")
+prob <- predict(acc_fit0, newdata=test, type="response")
 pred <- prediction(prob, test$Accuracy)
 Behave_fit_pred = rep(0, dim(test)[1])
 Behave_fit_pred[prob > 0.5] = 1
@@ -124,50 +157,142 @@ test_error
 
 #### Confusion Matrix
 ```{r}
-table(Behave_fit_pred, test$Accuracy)
+confusion_matrix_acc = table(Behave_fit_pred, test$Accuracy)
+confusion_matrix_acc
+```
+
+```{r}
+library(ggplot2)
+library(yardstick)
+df_cm = data.frame(test$Accuracy, Behave_fit_pred)
+df_cm$obs = as.factor(df_cm$test.Accuracy)
+df_cm$pred = as.factor(df_cm$Behave_fit_pred)
+cm = conf_mat(df_cm, obs, pred)
+autoplot(cm, type = "heatmap") +
+  scale_fill_gradient(low="#D6EAF8",high = "#2E86C1")
 ```
 
 ####  ROC curve and AUROC
 ```{r}
 perf <- performance(pred, measure = "tpr", x.measure = "fpr")
-plot(perf)
+plot(perf, main = "ROC Curve")
+```
+
+```{r}
 auc <- performance(pred, measure = "auc")
 auc <- auc@y.values[[1]]
 auc
+```
+
+```{r}
+library(caret)
+sensitivity(confusion_matrix_acc)
+specificity(confusion_matrix_acc)
 ```
 
 ### 3. Confidence Logistic Regression Model
 
 ```{r}
 library(dplyr)
-behave <- Behave %>%
+behave_train <- train %>%
+  mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
+behave_test <- test %>%
   mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
 ```
 
 ```{r}
 library(lme4)
-conf_fit0 = glmer(Conf~StrengthLevel*ResponseTime+(1|ParticipantNum), data = behave, family = binomial) 
+conf_fit0 = glmer(Conf~StrengthLevel*ResponseTime+(1|ParticipantNum), data = behave_train, family = binomial) 
 summary(conf_fit0)
 ```
 
+
 ```{r}
 library(lme4)
-conf_fit1 = glmer(Conf~StrengthLevel+ResponseTime+(1|ParticipantNum), data = behave, family = binomial) 
+conf_fit1 = glmer(Conf~StrengthLevel+ResponseTime+(1|ParticipantNum), data = behave_train, family = binomial) 
 summary(conf_fit1)
 ```
 
-
+#### output the table
 ```{r}
-library(lme4)
-conf_fit1 = glmer(Conf~StrengthLevel+ResponseTime+(1|ParticipantNum), data = behave, family = binomial) 
-summary(conf_fit1)
+library(stargazer)
+stargazer(conf_fit0, conf_fit1, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
 ```
 
 
 #### Likelihood Ratio Tests (Goodness-of-fit)
 ```{r}
 library(lmtest)
-lrtest(conf_fit0, conf_fit1)
+lrtest(conf_fit1, conf_fit0)
+```
+#### coefficient interpretation
+```{r}
+1-exp(-2.3434)
+1-exp(-2.3434-0.1759)
+1-exp(-2.3434-0.3249)
+1-exp(-2.3434-0.1027)
+1-exp(-2.3434+0.3862)
+1-exp(-2.3434+0.9251)
+```
+```{r}
+exp(0.4355-0.1759)
+exp(0.7143-0.3249)
+exp(0.8978-0.1027)
+exp(1.5253+0.3862)
+exp(1.6956+0.9251)
+```
+
+
+#### test error
+```{r}
+prob <- predict(conf_fit0, newdata=behave_test, type="response")
+pred <- prediction(prob, behave_test$Conf)
+Behave_fit_pred = rep(0, dim(behave_test)[1])
+Behave_fit_pred[prob > 0.5] = 1
+
+test_error = mean(Behave_fit_pred != behave_test$Conf)
+test_error
+```
+
+#### Confusion Matrix
+```{r}
+confusion_matrix_acc = table(Behave_fit_pred, behave_test$Conf)
+confusion_matrix_acc
+```
+
+```{r}
+library(ggplot2)
+library(yardstick)
+df_cm = data.frame(behave_test$Conf, Behave_fit_pred)
+df_cm$obs = as.factor(df_cm$behave_test.Conf)
+df_cm$pred = as.factor(df_cm$Behave_fit_pred)
+cm = conf_mat(df_cm, obs, pred)
+autoplot(cm, type = "heatmap") +
+  scale_fill_gradient(low="#D6EAF8",high = "#2E86C1")
+```
+
+####  ROC curve and AUROC
+```{r}
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, main = "ROC Curve")
+```
+
+```{r}
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+```{r}
+library(caret)
+sensitivity(confusion_matrix_acc)
+specificity(confusion_matrix_acc)
+```
+
+
+
+```{r}
+plot(as.factor(behave_train$Conf))
 ```
 
 

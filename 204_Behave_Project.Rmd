@@ -1,0 +1,374 @@
+---
+title: "204_Behave_Project"
+author: "Wei Dou, Jacobo Pereira-Pacheco and Yu Zhu "
+date: "12/9/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(naniar)
+library(ggplot2)
+library(dplyr)
+library(hrbrthemes)
+library(vcd)
+library(DescTools)
+library(tidyverse)
+library(lme4)
+library(stargazer)
+library(lmtest)
+library(ROCR)
+library(yardstick)
+library(caret)
+```
+
+## I. Data Description
+### 1.1 Import data
+```{r}
+Behave <- read_excel("~/Desktop/ucsc/courses/stat 204/project/ProjectDataset_behave.xlsx")
+```
+
+### 1.2 Summarization
+```{r}
+summary(Behave)
+```
+
+```{r}
+str(Behave)
+```
+
+```{r}
+head(Behave)
+```
+
+```{r}
+# Show the frequency of the variables
+table(Behave$ParticipantNum)
+table(Behave$Confidence)
+table(Behave$StrengthLevel)
+table(Behave$Accuracy)
+```
+
+### 1.3 Factorization
+```{r}
+Behave$ParticipantNum = as.factor(Behave$ParticipantNum)
+Behave$Confidence = as.factor(Behave$Confidence)
+Behave$StrengthLevel = as.factor(Behave$StrengthLevel)
+```
+
+## II. Explotary Data Analysis
+### 2.1 Missing Data
+```{r}
+vis_miss(Behave)
+```
+
+### 2.2 Potential Outliers for Response Time
+```{r}
+p <- ggplot(Behave, aes(x=ResponseTime)) + 
+  geom_histogram(binwidth=0.1, alpha=0.9, fill="#69b3a2", color="#e9ecef") +
+  ggtitle("Histogram of Response Time")
+p
+```
+
+### 2.3 Visualize Accuracy and Confidence
+```{r}
+par(mfrow = c(1,2))
+plot(as.factor(Behave$Accuracy))
+plot(as.factor(Behave$Confidence))
+```
+
+### 2.4 The Histograms for Response Time under Accuracy = 1 and 0 Separately
+```{r}
+Accurate_RT = Behave$ResponseTime[Behave$Accuracy == 1]
+Inaccurate_RT = Behave$ResponseTime[Behave$Accuracy == 0]
+acc_data <- data.frame(
+  type = c( rep("Response Time under Accurate Decision", length(Accurate_RT)), rep("Response Time under Inaccurate Decision", length(Inaccurate_RT)) ),
+  value = c( Accurate_RT, Inaccurate_RT )
+)
+
+p <- acc_data %>%
+  ggplot( aes(x=value, fill=type)) +
+    geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity') +
+    scale_fill_manual(values=c("#69b3a2", "#404080")) +
+    labs(fill="")
+p
+```
+
+### 2.5 Contingency Table of Strength level VS Participant Number
+```{r}
+table(Behave$StrengthLevel, Behave$ParticipantNum)
+```
+### 2.6 Box Plots for Response Time vs Strength Level and Response Time vs Participants
+```{r}
+par(mfrow = c(1,2))
+boxplot(ResponseTime~StrengthLevel, data = Behave, xlab="ParticipantNum", ylab="ResponseTime")
+boxplot(ResponseTime~ParticipantNum, data = Behave, xlab="ParticipantNum", ylab="ResponseTime")
+```
+
+### 2.7 Mosaic Plots of Confidence vs Strength Level and Accuracy VS Strength Level
+```{r}
+par(mfrow = c(1,2))
+tb_Str_Conf = table(Behave$StrengthLevel, Behave$Confidence); tb_Str_Conf
+mosaicplot(tb_Str_Conf, main="Confidence vs Strength Level", xlab="Strength", ylab="Confidence",shade=TRUE)
+
+tb_Stren_Acc = table(Behave$StrengthLevel, Behave$Accuracy); tb_Stren_Acc
+mosaicplot(tb_Stren_Acc, shade = TRUE, main="Accuracy vs Strength Level", xlab="Strength Level", ylab="Accuracy")
+```
+
+### 2.8 Box Plots of Reponse time Vs Accuracy and Reponse time Vs Confidence
+```{r}
+par(mfrow = c(1,2))
+boxplot(Behave$ResponseTime~Behave$Accuracy, xlab = "Accuracy", ylab = "Response Time", col=rgb(0.3,0.5,0.4,0.6))
+boxplot(Behave$ResponseTime~Behave$Confidence, xlab = "Confidence", ylab = "Response Time", col="#69b3a2")
+```
+
+### 2.9 Interactions between Strength Level and Response Time
+```{r}
+glm1 <- glm(Accuracy~StrengthLevel*ResponseTime, data = Behave,
+            family = "binomial")
+newdf = cbind(Behave, Pred_Logit_Accuracy = predict(glm1))
+
+ggplot(newdf) +
+  aes(x = ResponseTime, y = Pred_Logit_Accuracy, color = StrengthLevel) +
+  geom_point() +
+  geom_line() + 
+  scale_color_manual(
+        values=c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"))
+```
+
+```{r}
+behave <- Behave %>%
+  mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
+```
+
+```{r}
+glm2 <- glm(Conf~StrengthLevel*ResponseTime, data = behave,
+            family = "binomial")
+newdf2 = cbind(Behave, Pred_Logit_Confidence = predict(glm2))
+
+ggplot(newdf2) +
+  aes(x = ResponseTime, y = Pred_Logit_Confidence, color = StrengthLevel) +
+  geom_point() +
+  geom_line() + 
+  scale_color_manual(
+        values=c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"))
+```
+
+## III. Randomized Block Model
+### 3.1 Build ANOVA Model with Interaction
+```{r}
+L_aov = aov(ResponseTime~StrengthLevel*ParticipantNum, data = Behave)
+summary(L_aov)
+```
+
+### 3.2 Diagnostics
+```{r}
+par(mfrow=c(2,2))
+plot(L_aov)
+```
+
+### 3.3 Log-transformation for Response Time
+```{r}
+L_aov_log = aov(log(ResponseTime)~StrengthLevel*ParticipantNum, data = Behave)
+summary(L_aov_log)
+```
+
+### 3.4 Tukey Method for Pairwise Comparisons
+```{r}
+CIs_strLevel = TukeyHSD(L_aov_log, which = 1)
+CIs_strLevel
+```
+
+```{r}
+plot(CIs_strLevel)
+```
+
+### 3.5 Scheffe's Method for Pairwise Comparisons
+```{r}
+ScheffeTest(x=L_aov_log, which="StrengthLevel")
+plot(ScheffeTest(x=L_aov_log, which="StrengthLevel"))
+```
+
+
+
+## IV. Logistic Regression Model for Accuracy
+### 4.1 Train-test Split
+```{r}
+set.seed(1234)
+train = Behave %>% group_by(ParticipantNum, StrengthLevel) %>% sample_n(80)
+# write.csv(train,"~/Desktop/ucsc/courses/stat 204/project/Accuracy_Training.csv", row.names = FALSE)
+
+test = dplyr::anti_join(Behave, train)
+# write.csv(test,"~/Desktop/ucsc/courses/stat 204/project/Accuracy_Testing.csv", row.names = FALSE)
+
+### import the exported training and testing data
+train = read.csv("./data/Accuracy_Training.csv")
+test = read.csv("./data/Accuracy_Testing.csv")
+```
+
+
+### 4.2 Brief Check for the Distribution Similarity of Train and Test Sets
+```{r}
+box_train_rt = data.frame(ResponseTime = train$ResponseTime, set = rep("train", length(train$ResponseTime)))
+box_test_rt = data.frame(ResponseTime = test$ResponseTime, set = rep("test", length(test$ResponseTime)))
+box_rt = rbind(box_train_rt,box_test_rt)
+boxplot(box_rt$ResponseTime~box_rt$set, xlab = "Subset", ylab = "Response Time", col=rgb(0.3,0.5,0.4,0.6))
+```
+
+Kolomogorov-Smirnov tests (for continuous response time)
+(evaluate their similarity by measuring the differences between the ECDFs)
+```{r}
+ks.test(train$ResponseTime, test$ResponseTime)
+```
+
+
+### 4.3 Fit the Training Data for the Full Model M1 With Interaction
+```{r}
+acc_fit0 = glmer(Accuracy~StrengthLevel*ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
+summary(acc_fit0)
+```
+
+### 4.4 Fit the Training Data for the Additive Model M2 With Interaction
+```{r}
+acc_fit1 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
+summary(acc_fit1)
+```
+
+### 4.5 Output the Table
+```{r}
+stargazer(acc_fit0, acc_fit1, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
+```
+
+### 4.6 Likelihood Ratio Tests (Goodness-of-fit)
+```{r}
+lrtest(acc_fit0, acc_fit1)
+```
+
+### 4.7 Diagostics
+```{r}
+plot(acc_fit0)
+```
+
+### 4.8 Predictions
+#### Test Error
+```{r}
+prob <- predict(acc_fit0, newdata=test, type="response")
+pred <- prediction(prob, test$Accuracy)
+Behave_fit_pred = rep(0, dim(test)[1])
+Behave_fit_pred[prob > 0.5] = 1
+
+test_error = mean(Behave_fit_pred != test$Accuracy)
+test_error
+```
+
+#### Confusion Matrix
+```{r}
+confusion_matrix_acc = table(Behave_fit_pred, test$Accuracy)
+confusion_matrix_acc
+```
+
+```{r}
+df_cm = data.frame(test$Accuracy, Behave_fit_pred)
+df_cm$obs = as.factor(df_cm$test.Accuracy)
+df_cm$pred = as.factor(df_cm$Behave_fit_pred)
+cm = conf_mat(df_cm, obs, pred)
+autoplot(cm, type = "heatmap") +
+  scale_fill_gradient(low="#D6EAF8",high = "#2E86C1")
+```
+
+#### AUROC
+```{r}
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+#### Sensitivity and Specificity
+```{r}
+sensitivity(confusion_matrix_acc)
+specificity(confusion_matrix_acc)
+```
+
+
+## V. Logistic Regression Model for Confidence
+### 5.1 Map the Confidence into 2 Categories
+```{r}
+behave_train <- train %>%
+  mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
+behave_test <- test %>%
+  mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
+```
+
+### 5.2 Fit the Training Data for the Full Model M1 With Interaction
+```{r}
+conf_fit0 = glmer(Conf~StrengthLevel*ResponseTime+(1|ParticipantNum), data = behave_train, family = binomial) 
+summary(conf_fit0)
+```
+
+### 5.3 Fit the Training Data for the Additive Model M2 With Interaction
+```{r}
+conf_fit1 = glmer(Conf~StrengthLevel+ResponseTime+(1|ParticipantNum), data = behave_train, family = binomial) 
+summary(conf_fit1)
+```
+
+### 5.4 Output the Table
+```{r}
+stargazer(conf_fit0, conf_fit1, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
+```
+
+### 5.5 Likelihood Ratio Tests (Goodness-of-fit)
+```{r}
+lrtest(conf_fit1, conf_fit0)
+```
+
+### 5.6 Diagostics
+```{r}
+plot(acc_fit0)
+```
+
+### 5.7 Predictions
+#### Test Error
+```{r}
+prob <- predict(conf_fit0, newdata=behave_test, type="response")
+pred <- prediction(prob, behave_test$Conf)
+Behave_fit_pred = rep(0, dim(behave_test)[1])
+Behave_fit_pred[prob > 0.5] = 1
+
+test_error = mean(Behave_fit_pred != behave_test$Conf)
+test_error
+```
+
+#### Confusion Matrix
+```{r}
+confusion_matrix_acc = table(Behave_fit_pred, behave_test$Conf)
+confusion_matrix_acc
+```
+
+```{r}
+df_cm = data.frame(behave_test$Conf, Behave_fit_pred)
+df_cm$obs = as.factor(df_cm$behave_test.Conf)
+df_cm$pred = as.factor(df_cm$Behave_fit_pred)
+cm = conf_mat(df_cm, obs, pred)
+autoplot(cm, type = "heatmap") +
+  scale_fill_gradient(low="#D6EAF8",high = "#2E86C1")
+```
+
+#### AUROC
+```{r}
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+#### Sensitivity and Specificity
+```{r}
+sensitivity(confusion_matrix_acc)
+specificity(confusion_matrix_acc)
+```
+
+
+
