@@ -24,6 +24,7 @@ library(lmtest)
 library(ROCR)
 library(yardstick)
 library(caret)
+library(arm)
 ```
 
 ## I. Data Description
@@ -105,8 +106,8 @@ table(Behave$StrengthLevel, Behave$ParticipantNum)
 ### 2.6 Box Plots for Response Time vs Strength Level and Response Time vs Participants
 ```{r}
 par(mfrow = c(1,2))
-boxplot(ResponseTime~StrengthLevel, data = Behave, xlab="ParticipantNum", ylab="ResponseTime")
-boxplot(ResponseTime~ParticipantNum, data = Behave, xlab="ParticipantNum", ylab="ResponseTime")
+boxplot(ResponseTime~StrengthLevel, data = Behave, xlab="Strength Level", ylab="Response Time")
+boxplot(ResponseTime~ParticipantNum, data = Behave, xlab="Participant Number", ylab="Response Time")
 ```
 
 ### 2.7 Mosaic Plots of Confidence vs Strength Level and Accuracy VS Strength Level
@@ -161,7 +162,7 @@ ggplot(newdf2) +
 ## III. Randomized Block Model
 ### 3.1 Build ANOVA Model with Interaction
 ```{r}
-L_aov = aov(ResponseTime~StrengthLevel*ParticipantNum, data = Behave)
+L_aov = aov(ResponseTime~StrengthLevel+ParticipantNum, data = Behave)
 summary(L_aov)
 ```
 
@@ -173,9 +174,15 @@ plot(L_aov)
 
 ### 3.3 Log-transformation for Response Time
 ```{r}
-L_aov_log = aov(log(ResponseTime)~StrengthLevel*ParticipantNum, data = Behave)
+L_aov_log = aov(log(ResponseTime)~StrengthLevel+ParticipantNum, data = Behave)
 summary(L_aov_log)
 ```
+
+```{r}
+par(mfrow=c(2,2))
+plot(L_aov_log)
+```
+
 
 ### 3.4 Tukey Method for Pairwise Comparisons
 ```{r}
@@ -211,6 +218,19 @@ test = read.csv("./data/Accuracy_Testing.csv")
 ```
 
 
+```{r}
+# Factorization
+train$ParticipantNum = as.factor(train$ParticipantNum)
+train$Confidence = as.factor(train$Confidence)
+train$StrengthLevel = as.factor(train$StrengthLevel)
+
+test$ParticipantNum = as.factor(test$ParticipantNum)
+test$Confidence = as.factor(test$Confidence)
+test$StrengthLevel = as.factor(test$StrengthLevel)
+```
+
+
+
 ### 4.2 Brief Check for the Distribution Similarity of Train and Test Sets
 ```{r}
 box_train_rt = data.frame(ResponseTime = train$ResponseTime, set = rep("train", length(train$ResponseTime)))
@@ -219,12 +239,10 @@ box_rt = rbind(box_train_rt,box_test_rt)
 boxplot(box_rt$ResponseTime~box_rt$set, xlab = "Subset", ylab = "Response Time", col=rgb(0.3,0.5,0.4,0.6))
 ```
 
-Kolomogorov-Smirnov tests (for continuous response time)
-(evaluate their similarity by measuring the differences between the ECDFs)
 ```{r}
-ks.test(train$ResponseTime, test$ResponseTime)
+plot(ecdf(train$ResponseTime), xlim=range(c(train$ResponseTime, test$ResponseTime)), lty=2, col="dodgerblue", main="Empirical Cumulative Distribution Functions")
+plot(ecdf(test$ResponseTime), add=TRUE, lty=2, col="purple")
 ```
-
 
 ### 4.3 Fit the Training Data for the Full Model M1 With Interaction
 ```{r}
@@ -250,7 +268,18 @@ lrtest(acc_fit0, acc_fit1)
 
 ### 4.7 Diagostics
 ```{r}
-plot(acc_fit0)
+# Pearson's residuals plot
+res_pear = residuals(acc_fit0, type="pearson")
+plot(predict(acc_fit0), res_pear, xlab="Fitted values", ylab = "Residuals", main="Pearson's Residuals Plot")
+abline(h = 0, lty = 2)
+
+# Deviance residuals plot
+res_dev = residuals(acc_fit0, type="deviance")
+plot(predict(acc_fit0), res_dev, xlab="Fitted values", ylab = "Residuals", main="Deviance Residuals Plot")
+abline(h = 0, lty = 2)
+
+# Binned residuals plot
+binnedplot(fitted(acc_fit0), residuals(acc_fit0, type = "response"))
 ```
 
 ### 4.8 Predictions
@@ -289,8 +318,8 @@ auc
 
 #### Sensitivity and Specificity
 ```{r}
-sensitivity(confusion_matrix_acc)
-specificity(confusion_matrix_acc)
+234/(234+1680)  # Specificity
+6264/(6264+265) # Sensitivity
 ```
 
 
@@ -327,8 +356,20 @@ lrtest(conf_fit1, conf_fit0)
 
 ### 5.6 Diagostics
 ```{r}
-plot(acc_fit0)
+# Pearson's residuals plot
+res_pear = residuals(conf_fit0, type="pearson")
+plot(predict(conf_fit0), res_pear, xlab="Fitted values", ylab = "Residuals", main="Pearson's Residuals Plot")
+abline(h = 0, lty = 2)
+
+# Deviance residuals plot
+res_dev = residuals(conf_fit0, type="deviance")
+plot(predict(conf_fit0), res_dev, xlab="Fitted values", ylab = "Residuals", main="Deviance Residuals Plot")
+abline(h = 0, lty = 2)
+
+# Binned residuals plot
+binnedplot(fitted(conf_fit0), residuals(conf_fit0, type = "response"))
 ```
+
 
 ### 5.7 Predictions
 #### Test Error
@@ -344,8 +385,8 @@ test_error
 
 #### Confusion Matrix
 ```{r}
-confusion_matrix_acc = table(Behave_fit_pred, behave_test$Conf)
-confusion_matrix_acc
+confusion_matrix_conf = table(Behave_fit_pred, behave_test$Conf)
+confusion_matrix_conf
 ```
 
 ```{r}
@@ -366,8 +407,8 @@ auc
 
 #### Sensitivity and Specificity
 ```{r}
-sensitivity(confusion_matrix_acc)
-specificity(confusion_matrix_acc)
+3354/(3354+832) # specificity
+3304/(3304+953) # sensitivity
 ```
 
 
