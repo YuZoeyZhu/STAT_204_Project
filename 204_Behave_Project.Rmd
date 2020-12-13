@@ -202,8 +202,8 @@ plot(ScheffeTest(x=L_aov_log, which="StrengthLevel"))
 
 
 
-## IV. Logistic Regression Model for Accuracy
-### 4.1 Train-test Split
+## IV. Train-test Split
+### 4.1 Train-test Split and Factorization
 ```{r}
 set.seed(1234)
 train = Behave %>% group_by(ParticipantNum, StrengthLevel) %>% sample_n(80)
@@ -230,8 +230,7 @@ test$StrengthLevel = as.factor(test$StrengthLevel)
 ```
 
 
-
-### 4.2 Brief Check for the Distribution Similarity of Train and Test Sets
+### 4.2 Brief Check for the Distributions Similarity of Train and Test Sets
 ```{r}
 box_train_rt = data.frame(ResponseTime = train$ResponseTime, set = rep("train", length(train$ResponseTime)))
 box_test_rt = data.frame(ResponseTime = test$ResponseTime, set = rep("test", length(test$ResponseTime)))
@@ -244,29 +243,30 @@ plot(ecdf(train$ResponseTime), xlim=range(c(train$ResponseTime, test$ResponseTim
 plot(ecdf(test$ResponseTime), add=TRUE, lty=2, col="purple")
 ```
 
-### 4.3 Fit the Training Data for the Full Model M1 With Interaction
+## V. Logistic Regression Model for Accuracy
+### 5.1 Fit the Training Data for the Full Model M1 With Interaction
 ```{r}
 acc_fit0 = glmer(Accuracy~StrengthLevel*ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
 summary(acc_fit0)
 ```
 
-### 4.4 Fit the Training Data for the Additive Model M2 With Interaction
+### 5.2 Fit the Training Data for the Additive Model M2 With Interaction
 ```{r}
 acc_fit1 = glmer(Accuracy~StrengthLevel+ResponseTime+(1|ParticipantNum), data = train, family = binomial) 
 summary(acc_fit1)
 ```
 
-### 4.5 Output the Table
+### 5.3 Output the Table
 ```{r}
 stargazer(acc_fit0, acc_fit1, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
 ```
 
-### 4.6 Likelihood Ratio Tests (Goodness-of-fit)
+### 5.4 Likelihood Ratio Tests (Goodness-of-fit)
 ```{r}
 lrtest(acc_fit0, acc_fit1)
 ```
 
-### 4.7 Diagostics
+### 5.5 Diagostics
 ```{r}
 # Pearson's residuals plot
 res_pear = residuals(acc_fit0, type="pearson")
@@ -282,7 +282,7 @@ abline(h = 0, lty = 2)
 binnedplot(fitted(acc_fit0), residuals(acc_fit0, type = "response"))
 ```
 
-### 4.8 Predictions
+### 5.6 Predictions
 #### Test Error
 ```{r}
 prob <- predict(acc_fit0, newdata=test, type="response")
@@ -309,7 +309,16 @@ autoplot(cm, type = "heatmap") +
   scale_fill_gradient(low="#D6EAF8",high = "#2E86C1")
 ```
 
-#### AUROC
+#### ROC curve and AUROC
+
+\begin{figure}[p]
+```{r}
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, main = "ROC Curve")
+```
+\end{figure}
+
+
 ```{r}
 auc <- performance(pred, measure = "auc")
 auc <- auc@y.values[[1]]
@@ -323,8 +332,8 @@ auc
 ```
 
 
-## V. Logistic Regression Model for Confidence
-### 5.1 Map the Confidence into 2 Categories
+## VI. Logistic Regression Model for Confidence
+### 6.1 Map the Confidence into 2 Categories
 ```{r}
 behave_train <- train %>%
   mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
@@ -332,29 +341,29 @@ behave_test <- test %>%
   mutate(Conf = ifelse(as.numeric(Confidence) > 2, 1, 0))
 ```
 
-### 5.2 Fit the Training Data for the Full Model M1 With Interaction
+### 6.2 Fit the Training Data for the Full Model M1 With Interaction
 ```{r}
 conf_fit0 = glmer(Conf~StrengthLevel*ResponseTime+(1|ParticipantNum), data = behave_train, family = binomial) 
 summary(conf_fit0)
 ```
 
-### 5.3 Fit the Training Data for the Additive Model M2 With Interaction
+### 6.3 Fit the Training Data for the Additive Model M2 With Interaction
 ```{r}
 conf_fit1 = glmer(Conf~StrengthLevel+ResponseTime+(1|ParticipantNum), data = behave_train, family = binomial) 
 summary(conf_fit1)
 ```
 
-### 5.4 Output the Table
+### 6.4 Output the Table
 ```{r}
 stargazer(conf_fit0, conf_fit1, title='Logistic Regression Model',header = FALSE,label="tab:02005",ci=TRUE,digits=3)
 ```
 
-### 5.5 Likelihood Ratio Tests (Goodness-of-fit)
+### 6.5 Likelihood Ratio Tests (Goodness-of-fit)
 ```{r}
 lrtest(conf_fit1, conf_fit0)
 ```
 
-### 5.6 Diagostics
+### 6.6 Diagostics
 ```{r}
 # Pearson's residuals plot
 res_pear = residuals(conf_fit0, type="pearson")
@@ -371,7 +380,7 @@ binnedplot(fitted(conf_fit0), residuals(conf_fit0, type = "response"))
 ```
 
 
-### 5.7 Predictions
+### 6.7 Predictions
 #### Test Error
 ```{r}
 prob <- predict(conf_fit0, newdata=behave_test, type="response")
@@ -398,7 +407,16 @@ autoplot(cm, type = "heatmap") +
   scale_fill_gradient(low="#D6EAF8",high = "#2E86C1")
 ```
 
-#### AUROC
+#### ROC curve and AUROC
+
+\begin{figure}[p]
+```{r}
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, main = "ROC Curve")
+```
+\end{figure}
+
+
 ```{r}
 auc <- performance(pred, measure = "auc")
 auc <- auc@y.values[[1]]
